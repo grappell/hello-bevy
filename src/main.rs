@@ -1,14 +1,16 @@
 use bevy::prelude::*;
 
+
+// This code was made following the bevy book series, though it is verry short. 
+// I can assure you that what you are getting is exactly what was made. (not much)
+
+
 fn main() {
     App::new()
-        .add_startup_system(add_people)
-        .add_system(hello_world)
-        .add_system(greet_people)
+        .add_plugins(DefaultPlugins)
+        .add_plugin(HelloPlugin)
         .run();
 }
-
-// Stopped at plugins, following this page: https://bevyengine.org/learn/book/getting-started/plugins/
 
 #[derive(Component)]
 struct Person;
@@ -16,18 +18,33 @@ struct Person;
 #[derive(Component)]
 struct Name(String);
 
+pub struct HelloPlugin;
+
+impl Plugin for HelloPlugin {
+    fn build(&self, app: &mut App) {
+        app
+        .insert_resource(GreetTimer(Timer::from_seconds(2.0, TimerMode::Once)))
+        .add_startup_system(add_people)
+        .add_system(greet_people);
+    }
+}
+
 fn add_people(mut commands: Commands) {
     commands.spawn((Person, Name("Elaina Proctor".to_string())));
     commands.spawn((Person, Name("Renzo Hume".to_string())));
     commands.spawn((Person, Name("Zayna Nieves".to_string())));
 }
 
-fn greet_people(query: Query<&Name, With<Person>>) {
-    for name in query.iter() {
-        println!("hello {}!", name.0);
-    }
-}
+#[derive(Resource)]
+struct GreetTimer(Timer);
 
-fn hello_world() {
-    println!("hello world!, but in this case from bevy");
+fn greet_people(
+    time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Name, With<Person>>) {
+    // update our timer with the time elapsed since the last update
+    // if that caused the timer to finish, we say hello to everyone
+    if timer.0.tick(time.delta()).just_finished() {
+        for name in query.iter() {
+            println!("hello {}!", name.0);
+        }
+    }
 }
