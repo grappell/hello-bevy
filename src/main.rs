@@ -1,50 +1,142 @@
+use bevy::input::mouse::MouseMotion;
 use bevy::prelude::*;
-
-
-// This code was made following the bevy book series, though it is verry short. 
-// I can assure you that what you are getting is exactly what was made. (not much)
+use std::f32::consts::PI;
+use bevy::window::CursorGrabMode;
 
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins)
-        .add_plugin(HelloPlugin)
+        .insert_resource(AmbientLight {
+            color: Color::WHITE,
+            brightness: 1.0 / 5.0f32,
+        })
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            window: WindowDescriptor {
+                title: "3D Viewer".to_string(),
+                ..default()
+            },
+            ..default()
+        }))
+        .add_startup_system(setup)
+        .add_system(cursor_grab_system)
+        .add_system(rotate)
+        .add_system(rotate_negative)
+        .add_system(mouse_click_system)
         .run();
 }
 
 #[derive(Component)]
-struct Person;
-
+struct Rotator;
 #[derive(Component)]
-struct Name(String);
+struct  RotatorN;
+#[derive(Component)]
+struct  IsCamera;
 
-pub struct HelloPlugin;
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // Ground plain
+    commands.spawn(PbrBundle {
+        mesh: meshes.add(Mesh::from(shape::Plane {size: 5.0})),
+        material: materials.add(Color::rgb(0.3, 0.5, 0.3).into()),
+        ..default()
+    });
 
-impl Plugin for HelloPlugin {
-    fn build(&self, app: &mut App) {
-        app
-        .insert_resource(GreetTimer(Timer::from_seconds(2.0, TimerMode::Once)))
-        .add_startup_system(add_people)
-        .add_system(greet_people);
+    // capsule
+    commands.spawn((PbrBundle {
+        mesh: meshes.add(Mesh::from(shape::Capsule {..default()})),
+        material: materials.add(Color::rgb(0.9, 0.3, 0.3).into()),
+        transform: Transform::from_xyz(0.0, 1.0, 0.0).with_rotation(Quat::from_rotation_x(-PI / 4.)),
+        ..default()
+    }, RotatorN));
+
+    // light
+    commands.spawn((PointLightBundle {
+        point_light: PointLight {
+            intensity: 1500.0,
+            shadows_enabled: true,
+            ..default()
+        },
+        transform: Transform::from_xyz(4.0, 8.0, 4.0),
+        ..default()
+    }, Rotator));
+
+    // camera
+    commands.spawn((Camera3dBundle {
+        transform: Transform::from_xyz(-1.0, 2.5, 5.0).looking_at(Vec3::ZERO, Vec3::Y),
+        ..default()
+    }, IsCamera));
+}
+
+fn cursor_grab_system(
+    mut windows: ResMut<Windows>,
+    btn: Res<Input<MouseButton>>,
+    key: Res<Input<KeyCode>>,
+) {
+    let window = windows.get_primary_mut().unwrap();
+
+    if btn.just_pressed(MouseButton::Left) {
+        window.set_cursor_grab_mode(CursorGrabMode::Confined);
+        window.set_cursor_visibility(false);
+    }
+
+    if key.just_pressed(KeyCode::Escape) {
+        window.set_cursor_grab_mode(CursorGrabMode::None);
+        window.set_cursor_visibility(true);
     }
 }
 
-fn add_people(mut commands: Commands) {
-    commands.spawn((Person, Name("Elaina Proctor".to_string())));
-    commands.spawn((Person, Name("Renzo Hume".to_string())));
-    commands.spawn((Person, Name("Zayna Nieves".to_string())));
+fn mouse_click_system(
+    mouse_button_input: Res<Input<MouseButton>>,
+    mut motion_evr: EventReader<MouseMotion>,
+    mut query: Query<&mut Transform, With<IsCamera>>
+) {
+    if mouse_button_input.pressed(MouseButton::Right) {
+        for ev in motion_evr.iter() {
+            for mut transfrom in &mut query {
+                // println!("{:?}", transfrom)
+                let scale: f32 = 10.0;
+                let trasform_delta = Transform::from_xyz(ev.delta.x / scale, ev.delta.y / scale, 0.0);
+                transfrom.translation += trasform_delta.translation;
+                println!("{:?}", trasform_delta.translation)
+            }
+        }
+    }
+
+    if mouse_button_input.pressed(MouseButton::Left) {
+        for ev in motion_evr.iter() {
+            // println!("Mouse moved: X: {} px, Y: {} px", ev.delta.x, ev.delta.y);
+            for mut transfrom in &mut query {
+                let scale: f32 = 10.0;
+                let roation_amount = (ev.delta.x / scale).clamp(-0.1, 0.1);
+                transfrom.rotate_around(Vec3::ZERO, Quat::from_rotation_y(roation_amount))
+            }
+        }
+    }
+
+    if mouse_button_input.just_pressed(MouseButton::Left) {
+        info!("left mouse just pressed");
+    }
+
+    if mouse_button_input.just_released(MouseButton::Left) {
+        info!("left mouse just released");
+    }
 }
 
-#[derive(Resource)]
-struct GreetTimer(Timer);
+fn rotate(mut query: Query<&mut Transform, With<Rotator>>, time: Res<Time>) {
+    for mut transform in &mut query {
+        // transform.rotate_x(time.delta_seconds() / 1.5);
+        transform.rotate_y(time.delta_seconds() / 1.);
+        transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(time.delta_seconds()))
+    }
+}
 
-fn greet_people(
-    time: Res<Time>, mut timer: ResMut<GreetTimer>, query: Query<&Name, With<Person>>) {
-    // update our timer with the time elapsed since the last update
-    // if that caused the timer to finish, we say hello to everyone
-    if timer.0.tick(time.delta()).just_finished() {
-        for name in query.iter() {
-            println!("hello {}!", name.0);
-        }
+fn rotate_negative(mut query: Query<&mut Transform, With<RotatorN>>, time: Res<Time>) {
+    for mut transform in &mut query {
+        transform.rotate_x(time.delta_seconds() / 1.5);
+        // transform.rotate_y(time.delta_seconds() / 1.);
+        // transform.rotate_around(Vec3::ZERO, Quat::from_rotation_y(-time.delta_seconds()))
     }
 }
